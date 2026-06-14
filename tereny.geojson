@@ -642,6 +642,56 @@
     },
     {
       "type": "Feature",
+      "id": "61",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              20.03966,
+              49.98718
+            ],
+            [
+              20.03906,
+              49.98717
+            ],
+            [
+              20.03903,
+              49.98681
+            ],
+            [
+              20.03889,
+              49.98671
+            ],
+            [
+              20.03887,
+              49.98625
+            ],
+            [
+              20.03958,
+              49.98625
+            ],
+            [
+              20.03966,
+              49.98718
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": "61",
+        "title": "Osiedle Szymanowskiego nr 18",
+        "name": "Osiedle Szymanowskiego nr 18",
+        "stroke": "#e74c3c",
+        "stroke-opacity": 1,
+        "stroke-width": 3,
+        "fill": "#e74c3c",
+        "fill-opacity": 0.15,
+        "created": "2026-06-14T17:59:43.688Z"
+      }
+    },
+    {
+      "type": "Feature",
       "id": "71",
       "geometry": {
         "type": "Polygon",
@@ -1107,6 +1157,96 @@
         "fill-opacity": 0.15,
         "created": "2026-03-19T23:26:38.339Z",
         "description": "Matejki, Park Kingi, Dembowskiego od Daniłowicza do ronda, Żeromskiego"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "80",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              20.05962,
+              49.98918
+            ],
+            [
+              20.06008,
+              49.99023
+            ],
+            [
+              20.06051,
+              49.99015
+            ],
+            [
+              20.06066,
+              49.99076
+            ],
+            [
+              20.05792,
+              49.99104
+            ],
+            [
+              20.05793,
+              49.99133
+            ],
+            [
+              20.05737,
+              49.99139
+            ],
+            [
+              20.05719,
+              49.99099
+            ],
+            [
+              20.05469,
+              49.99115
+            ],
+            [
+              20.05476,
+              49.99025
+            ],
+            [
+              20.05519,
+              49.99022
+            ],
+            [
+              20.0553,
+              49.99044
+            ],
+            [
+              20.05821,
+              49.98994
+            ],
+            [
+              20.05812,
+              49.98935
+            ],
+            [
+              20.05884,
+              49.98917
+            ],
+            [
+              20.05907,
+              49.98931
+            ],
+            [
+              20.05962,
+              49.98918
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": "80",
+        "title": "Prusa, Kraszewskiego od Reformackiej do Brodzińskiego",
+        "name": "Prusa, Kraszewskiego od Reformackiej do Brodzińskiego",
+        "stroke": "#e74c3c",
+        "stroke-opacity": 1,
+        "stroke-width": 3,
+        "fill": "#e74c3c",
+        "fill-opacity": 0.15,
+        "created": "2026-06-14T18:03:12.243Z"
       }
     },
     {
