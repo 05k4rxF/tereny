@@ -16,12 +16,19 @@
             padding: 0;
         }
 
+        html {
+            height: 100%;
+            overflow: hidden;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #f5f5f5;
-            min-height: 100vh;
+            height: 100vh;
+            height: 100dvh;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
 
         .header {
@@ -52,20 +59,23 @@
             display: flex;
             flex-direction: column;
             min-height: 0;
+            overflow: hidden;
         }
 
         .browse-map {
-            height: 38vh;
-            min-height: 220px;
-            flex-shrink: 0;
+            flex: 1 1 42%;
+            min-height: 160px;
+            max-height: 50%;
             z-index: 0;
         }
 
         .browse-root {
-            flex: 1;
-            overflow: auto;
-            background: #f5f5f5;
+            flex: 1 1 58%;
             min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            background: #f5f5f5;
         }
 
         .browse-inner {
@@ -80,15 +90,15 @@
             }
 
             .browse-map {
-                flex: 1;
-                height: auto;
+                flex: 1 1 auto;
                 min-height: 0;
+                max-height: none;
             }
 
             .browse-root {
+                flex: 0 0 440px;
                 width: 440px;
                 max-width: 44vw;
-                flex-shrink: 0;
                 border-left: 1px solid #e0e0e0;
             }
         }
@@ -328,7 +338,11 @@
             var dbLayer = null;
             var selectedLayer = null;
             var featureById = {};
+            var layerById = {};
             var selectedTerrainId = null;
+
+            var FADED_STROKE_OPACITY = 0.38;
+            var FADED_FILL_OPACITY = 0.1;
 
             var openTabIcon =
                 '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" ' +
@@ -368,6 +382,79 @@
                 });
             }
 
+            function terrainPolygonStyle(feature, faded) {
+                const stroke = feature.properties.stroke || feature.properties.fill || '#e74c3c';
+                const fill = feature.properties.fill || feature.properties.stroke || '#e74c3c';
+                const fillOpacity = feature.properties['fill-opacity'] || 0.1;
+                const strokeWidth = feature.properties['stroke-width'] || 2;
+                const strokeOpacity = feature.properties['stroke-opacity'] || 1;
+
+                if (faded) {
+                    return {
+                        color: stroke,
+                        fillColor: fill,
+                        opacity: FADED_STROKE_OPACITY,
+                        fillOpacity: FADED_FILL_OPACITY,
+                        weight: 2,
+                        dashArray: '5, 5'
+                    };
+                }
+
+                return {
+                    color: stroke,
+                    opacity: strokeOpacity,
+                    fillColor: fill,
+                    fillOpacity: fillOpacity,
+                    weight: strokeWidth,
+                    dashArray: '5, 5'
+                };
+            }
+
+            function applyTerrainFading() {
+                Object.keys(layerById).forEach(function (id) {
+                    const layer = layerById[id];
+                    const feature = featureById[id];
+                    if (!layer || !feature) return;
+
+                    if (selectedTerrainId && String(id) === String(selectedTerrainId)) {
+                        layer.setStyle({ opacity: 0, fillOpacity: 0, weight: 0 });
+                        return;
+                    }
+
+                    layer.setStyle(terrainPolygonStyle(feature, !!selectedTerrainId));
+                });
+            }
+
+            function bindTerrainMapClick(layer, id) {
+                layer.on('click', function (e) {
+                    L.DomEvent.stopPropagation(e);
+                    showTerenOnMap(id);
+                });
+                layer.on('mouseover', function () {
+                    map.getContainer().style.cursor = 'pointer';
+                });
+                layer.on('mouseout', function () {
+                    map.getContainer().style.cursor = '';
+                });
+            }
+
+            function highlightListItem(id, options) {
+                options = options || {};
+                document.querySelectorAll('.terrain-item').forEach(function (el) {
+                    el.classList.remove('selected');
+                });
+                const safeId = window.CSS && CSS.escape
+                    ? CSS.escape(String(id))
+                    : String(id).replace(/["\\]/g, '\\$&');
+                const item = document.querySelector('.terrain-item[data-id="' + safeId + '"]');
+                if (item) {
+                    item.classList.add('selected');
+                    if (options.scroll !== false) {
+                        item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    }
+                }
+            }
+
             function initMap() {
                 if (map) return;
                 map = L.map('map').setView([50.0, 20.0], 10);
@@ -382,40 +469,37 @@
                 if (!map) return;
                 dbLayer.clearLayers();
                 featureById = {};
+                layerById = {};
 
                 features.forEach(function (f) {
                     const id = terrainFeatureId(f);
                     featureById[id] = f;
 
-                    const stroke = f.properties.stroke || f.properties.fill || '#e74c3c';
-                    const fill = f.properties.fill || f.properties.stroke || '#e74c3c';
-                    const fillOpacity = f.properties['fill-opacity'] || 0.1;
-                    const strokeWidth = f.properties['stroke-width'] || 2;
-                    const strokeOpacity = f.properties['stroke-opacity'] || 1;
                     const label = terrainLabel(f);
                     const desc = terrainDescription(f);
                     const popupText = desc
                         ? '<b>' + escapeHtml(label) + '</b><br>ID: ' + escapeHtml(String(id)) +
-                          '<br><em>' + escapeHtml(desc) + '</em>'
+                        '<br><em>' + escapeHtml(desc) + '</em>'
                         : '<b>' + escapeHtml(label) + '</b><br>ID: ' + escapeHtml(String(id));
 
-                    L.polygon(polygonLatLngs(f), {
-                        color: stroke,
-                        opacity: strokeOpacity,
-                        fillColor: fill,
-                        fillOpacity: fillOpacity,
-                        weight: strokeWidth,
-                        dashArray: '5, 5'
-                    }).addTo(dbLayer).bindPopup(popupText);
-                });
+                    const layer = L.polygon(
+                        polygonLatLngs(f),
+                        terrainPolygonStyle(f, !!selectedTerrainId)
+                    ).addTo(dbLayer).bindPopup(popupText);
 
-                if (fitAll && features.length && dbLayer.getBounds().isValid()) {
-                    map.fitBounds(dbLayer.getBounds(), { padding: [40, 40] });
-                }
+                    bindTerrainMapClick(layer, id);
+                    layerById[id] = layer;
+                });
 
                 if (selectedTerrainId && !featureById[selectedTerrainId]) {
                     selectedTerrainId = null;
                     selectedLayer.clearLayers();
+                }
+
+                applyTerrainFading();
+
+                if (fitAll && features.length && dbLayer.getBounds().isValid()) {
+                    map.fitBounds(dbLayer.getBounds(), { padding: [40, 40] });
                 }
             }
 
@@ -440,19 +524,14 @@
                     fillOpacity: fillOpacity,
                     weight: strokeWidth
                 });
+                bindTerrainMapClick(polygon, id);
                 selectedLayer.addLayer(polygon);
+                applyTerrainFading();
                 if (options.fit !== false) {
                     map.fitBounds(polygon.getBounds(), { padding: [50, 50] });
                 }
 
-                document.querySelectorAll('.terrain-item').forEach(function (el) {
-                    el.classList.remove('selected');
-                });
-                const safeId = window.CSS && CSS.escape
-                    ? CSS.escape(String(id))
-                    : String(id).replace(/["\\]/g, '\\$&');
-                const item = document.querySelector('.terrain-item[data-id="' + safeId + '"]');
-                if (item) item.classList.add('selected');
+                highlightListItem(id, options);
             }
 
             function bindListItemHandlers() {
@@ -555,10 +634,11 @@
                 renderTerrainsOnMap(sorted, !selectedTerrainId);
                 if (selectedTerrainId) {
                     if (featureById[selectedTerrainId]) {
-                        showTerenOnMap(selectedTerrainId, { fit: false });
+                        showTerenOnMap(selectedTerrainId, { fit: false, scroll: false });
                     } else {
                         selectedTerrainId = null;
                         selectedLayer.clearLayers();
+                        applyTerrainFading();
                     }
                 }
                 updateCount(allFeatures.length, sorted.length, query);
