@@ -548,6 +548,97 @@
             transform: translateY(1px);
         }
 
+        .cycle-history {
+            margin: 12px 0;
+        }
+
+        .cycle-block {
+            margin-bottom: 10px;
+            padding: 12px;
+            background: #fff;
+            border: 1px solid #dce4ec;
+            border-radius: 8px;
+        }
+
+        .cycle-block.active {
+            border-color: #3498db;
+            box-shadow: 0 0 0 1px rgba(52, 152, 219, 0.25);
+        }
+
+        .cycle-block-title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #4a6278;
+            margin: 0 0 10px;
+        }
+
+        .cycle-field {
+            margin-bottom: 8px;
+        }
+
+        .cycle-field:last-child {
+            margin-bottom: 0;
+        }
+
+        .cycle-field label {
+            margin: 0 0 4px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #566573;
+        }
+
+        .cycle-field input[type="date"] {
+            width: 100%;
+            padding: 8px 10px;
+            border: 2px solid #d4e6f1;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .cycle-empty {
+            font-size: 13px;
+            color: #6c7a89;
+            font-style: italic;
+            padding: 10px 12px;
+            background: #fff;
+            border-radius: 8px;
+            border: 1px dashed #b8c9d9;
+        }
+
+        .teren-detail-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 14px;
+        }
+
+        .teren-detail-actions .btn-sm {
+            width: 100%;
+            padding: 10px 14px;
+            font-size: 13px;
+            border-radius: 8px;
+        }
+
+        .btn-rework {
+            background: #8e44ad;
+            color: #fff;
+        }
+
+        .period-przydzial-block {
+            margin-bottom: 10px;
+            padding: 10px 12px;
+            background: #fef9e7;
+            border: 1px solid #f4d03f;
+            border-radius: 8px;
+        }
+
+        .period-przydzial-block strong {
+            color: #7d6608;
+        }
+
         .brat-delete-btn {
             display: block;
             width: 100%;
@@ -1070,7 +1161,7 @@
     <script>
         (function () {
             const CONFIG = {
-                DRIVE_SYNC_URL: 'https://script.google.com/macros/s/AKfycbzklvco6J2dYZtwj4ZKe0xDVmYruGG-H6F7B8TcG4FXkMhzNHbRDiSbJdInn0r-xZ7A/exec',
+                DRIVE_SYNC_URL: 'https://script.google.com/macros/s/AKfycbwYIhETqW7m0Wgj-iln5lEluMp00AHFjtH68sebHFFdH6_zfgk1pFWlSqixrUCXpT9-/exec',
                 DB_FILENAME: 'tereny.geojson',
                 FETCH_TIMEOUT_MS: 45000,
                 COORD_PRECISION: 5,
@@ -1206,10 +1297,169 @@
                 if (!metaById[key]) {
                     metaById[key] = terenyMeta[key] || {
                         teren_nr: key, nazwa: '', parent_teren_nr: '', ostatnie_opracowanie: '',
-                        przypisany_typ: '', przypisany_id: '', data_przydzialu: '', completions: []
+                        przypisany_typ: '', przypisany_id: '', periods: []
                     };
                 }
+                normalizeMetaPeriods(metaById[key]);
                 return metaById[key];
+            }
+
+            function emptyVisit() {
+                return { przydzial: '', opracowanie: '', subterenId: null };
+            }
+
+            function emptyPeriod() {
+                return { assignee_typ: '', assignee_id: '', visits: [], data_zdania: '' };
+            }
+
+            function visitHasData(v) {
+                return !!(v && (v.przydzial || v.opracowanie));
+            }
+
+            function periodHasData(p) {
+                if (!p) return false;
+                if (p.assignee_typ && p.assignee_id) return true;
+                if (p.data_zdania) return true;
+                return (p.visits || []).some(visitHasData);
+            }
+
+            function migrateLegacyPeriods(meta) {
+                if (meta.periods?.length) return meta.periods;
+                const dp = meta.data_przydzialu || '';
+                const comps = meta.completions || [];
+                if (dp || comps.length) {
+                    const p = emptyPeriod();
+                    p.assignee_typ = meta.przypisany_typ || '';
+                    p.assignee_id = meta.przypisany_id || '';
+                    if (!comps.length) {
+                        p.visits.push({ przydzial: dp, opracowanie: '', subterenId: null });
+                    } else {
+                        comps.forEach(c => {
+                            p.visits.push({
+                                przydzial: dp,
+                                opracowanie: c.date || '',
+                                subterenId: c.subterenId || null
+                            });
+                        });
+                    }
+                    if (!meta.przypisany_typ && meta.ostatnie_opracowanie) {
+                        p.data_zdania = meta.ostatnie_opracowanie;
+                    }
+                    return [p];
+                }
+                const cycles = meta.cycles || [];
+                if (!cycles.length) return [];
+                const periods = [];
+                let cur = null;
+                cycles.forEach(cy => {
+                    if (!cur) {
+                        cur = emptyPeriod();
+                        cur.assignee_typ = meta.przypisany_typ || '';
+                        cur.assignee_id = meta.przypisany_id || '';
+                    }
+                    cur.visits.push({
+                        przydzial: cy.przydzial || '',
+                        opracowanie: cy.opracowanie || '',
+                        subterenId: cy.subterenId || null
+                    });
+                    if (cy.data_zdania) {
+                        cur.data_zdania = cy.data_zdania;
+                        periods.push(cur);
+                        cur = null;
+                    }
+                });
+                if (cur) {
+                    if (meta.przypisany_typ) {
+                        cur.assignee_typ = meta.przypisany_typ;
+                        cur.assignee_id = meta.przypisany_id;
+                    }
+                    periods.push(cur);
+                }
+                return periods;
+            }
+
+            function normalizeMetaPeriods(meta) {
+                if (!meta) return meta;
+                if (!meta.periods?.length) {
+                    meta.periods = migrateLegacyPeriods(meta);
+                }
+                meta.periods = meta.periods.map(p => ({
+                    assignee_typ: p.assignee_typ || '',
+                    assignee_id: p.assignee_id || '',
+                    data_zdania: p.data_zdania || '',
+                    visits: (p.visits || []).map(v => ({
+                        przydzial: v.przydzial || '',
+                        opracowanie: v.opracowanie || '',
+                        subterenId: v.subterenId || null
+                    }))
+                }));
+                while (meta.periods.length > 1 && !periodHasData(meta.periods[meta.periods.length - 1])) {
+                    meta.periods.pop();
+                }
+                return meta;
+            }
+
+            function getActivePeriod(meta) {
+                normalizeMetaPeriods(meta);
+                for (let i = meta.periods.length - 1; i >= 0; i--) {
+                    if (!meta.periods[i].data_zdania) return meta.periods[i];
+                }
+                return null;
+            }
+
+            function getActiveVisit(meta) {
+                const period = getActivePeriod(meta);
+                if (!period?.visits?.length) return null;
+                return period.visits[period.visits.length - 1];
+            }
+
+            function periodAssigneeLabel(period) {
+                if (!period?.assignee_typ || !period?.assignee_id) return '—';
+                return assigneeLabel({
+                    przypisany_typ: period.assignee_typ,
+                    przypisany_id: period.assignee_id
+                });
+            }
+
+            function activePrzydzialDate(meta) {
+                const visit = getActiveVisit(meta);
+                if (visit?.przydzial) return visit.przydzial;
+                const period = getActivePeriod(meta);
+                if (period?.visits?.length) {
+                    for (let i = period.visits.length - 1; i >= 0; i--) {
+                        if (period.visits[i].przydzial) return period.visits[i].przydzial;
+                    }
+                }
+                const periods = normalizeMetaPeriods(meta).periods;
+                for (let p = periods.length - 1; p >= 0; p--) {
+                    const visits = periods[p].visits || [];
+                    for (let v = visits.length - 1; v >= 0; v--) {
+                        if (visits[v].przydzial) return visits[v].przydzial;
+                    }
+                }
+                return meta.data_przydzialu || '';
+            }
+
+            function lastOpracowanieVisit(meta) {
+                const periods = normalizeMetaPeriods(meta).periods;
+                for (let p = periods.length - 1; p >= 0; p--) {
+                    const visits = periods[p].visits || [];
+                    for (let v = visits.length - 1; v >= 0; v--) {
+                        if (visits[v].opracowanie) return visits[v];
+                    }
+                }
+                return null;
+            }
+
+            function ensureDisplayPeriods(meta) {
+                normalizeMetaPeriods(meta);
+                const periods = meta.periods.slice();
+                const active = getActivePeriod(meta);
+                if (meta.przypisany_typ && meta.przypisany_id && !active) {
+                    periods.push(emptyPeriod());
+                }
+                if (!periods.length) periods.push(emptyPeriod());
+                return periods;
             }
 
             function syncMetaFromFeatures() {
@@ -1224,16 +1474,18 @@
             }
 
             function buildTerenyMetaArray() {
-                return Object.values(metaById).map(m => ({
-                    teren_nr: m.teren_nr,
-                    nazwa: m.nazwa || '',
-                    parent_teren_nr: m.parent_teren_nr || '',
-                    ostatnie_opracowanie: m.ostatnie_opracowanie || '',
-                    przypisany_typ: m.przypisany_typ || '',
-                    przypisany_id: m.przypisany_id || '',
-                    data_przydzialu: m.data_przydzialu || '',
-                    completions: m.completions || []
-                }));
+                return Object.values(metaById).map(m => {
+                    normalizeMetaPeriods(m);
+                    return {
+                        teren_nr: m.teren_nr,
+                        nazwa: m.nazwa || '',
+                        parent_teren_nr: m.parent_teren_nr || '',
+                        ostatnie_opracowanie: m.ostatnie_opracowanie || '',
+                        przypisany_typ: m.przypisany_typ || '',
+                        przypisany_id: m.przypisany_id || '',
+                        periods: m.periods || []
+                    };
+                });
             }
 
             function assigneeLabel(meta) {
@@ -1258,9 +1510,10 @@
                     return CONFIG.COLORS.green;
                 }
                 if (!meta.przypisany_typ || !meta.przypisany_id) return CONFIG.COLORS.red;
-                if (!meta.data_przydzialu) return CONFIG.COLORS.yellow;
-                const comps = meta.completions || [];
-                if (!comps.length) return CONFIG.COLORS.orange;
+                const przydzial = activePrzydzialDate(meta);
+                if (!przydzial) return CONFIG.COLORS.yellow;
+                const active = getActivePeriod(meta);
+                if (!active?.visits?.length || !getActiveVisit(meta)?.opracowanie) return CONFIG.COLORS.orange;
                 return CONFIG.COLORS.green;
             }
 
@@ -1356,7 +1609,10 @@
                     if (b.grupy) grupy = b.grupy;
                     if (b.terenyMeta) terenyMeta = b.terenyMeta;
                     if (b.opracowanie) opracowanie = b.opracowanie;
-                    Object.keys(terenyMeta).forEach(k => { metaById[k] = terenyMeta[k]; });
+                    Object.keys(terenyMeta).forEach(k => {
+                        metaById[k] = terenyMeta[k];
+                        normalizeMetaPeriods(metaById[k]);
+                    });
                     rebuildGrupaDataFromSources();
                     return true;
                 } catch (e) { return false; }
@@ -1455,7 +1711,10 @@
                 grupy = bundle.grupy || [];
                 opracowanie = bundle.opracowanie || {};
                 terenyMeta = {};
-                (bundle.terenyMeta || []).forEach(m => { terenyMeta[String(m.teren_nr)] = m; });
+                (bundle.terenyMeta || []).forEach(m => {
+                    terenyMeta[String(m.teren_nr)] = m;
+                    normalizeMetaPeriods(terenyMeta[String(m.teren_nr)]);
+                });
                 Object.keys(terenyMeta).forEach(k => { metaById[k] = terenyMeta[k]; });
                 rebuildGrupaDataFromSources();
             }
@@ -1565,6 +1824,7 @@
 
             function applyTerenMeta(meta) {
                 const id = String(meta.teren_nr);
+                normalizeMetaPeriods(meta);
                 metaById[id] = meta;
                 terenyMeta[id] = meta;
             }
@@ -1585,8 +1845,7 @@
                 const meta = getMeta(terenId);
                 meta.przypisany_typ = '';
                 meta.przypisany_id = '';
-                meta.data_przydzialu = '';
-                if (clearHistory) meta.completions = [];
+                if (clearHistory) meta.periods = [];
                 applyTerenMeta(meta);
 
                 setSaving(true, '⏳ Usuwam przydział…');
@@ -1890,7 +2149,8 @@
                 const meta = getMeta(id);
                 const col = getTerritoryColor(meta, isArchived(f));
                 const assignee = assigneeLabel(meta);
-                const lastComp = (meta.completions || []).slice(-1)[0];
+                const lastOp = lastOpracowanieVisit(meta);
+                const przydzial = activePrzydzialDate(meta);
                 const sel = selectedTerrainId === String(id) ? ' selected' : '';
                 const hidden = isTerenHidden(id);
                 const cls = 'teren-item' + (nested ? ' subteren' : '') + (isArchived(f) ? ' archived' : '') + (hidden ? ' map-hidden' : '') + sel;
@@ -1904,8 +2164,8 @@
                     '<span class="teren-color-dot" style="background:' + col + '"></span>' +
                     (assignee ? '<span class="badge ' + (meta.przypisany_typ === 'grupa' ? 'badge-group' : 'badge-brat') + '">' + escapeHtml(assignee) + '</span>' : '') +
                     '<div class="teren-meta">' +
-                    (meta.data_przydzialu ? 'Przydział: ' + escapeHtml(meta.data_przydzialu) : 'Brak daty przydziału') +
-                    (lastComp ? ' · Oprac.: ' + escapeHtml(lastComp.date) : '') +
+                    (przydzial ? 'Przydział: ' + escapeHtml(przydzial) : 'Brak daty przydziału') +
+                    (lastOp ? ' · Oprac.: ' + escapeHtml(lastOp.opracowanie) : '') +
                     (meta.ostatnie_opracowanie ? ' · Ostatnio zdany: ' + escapeHtml(meta.ostatnie_opracowanie) : '') +
                     (hidden ? '<div class="teren-meta" style="color:#95a5a6">Ukryty na mapie (tylko lokalnie)</div>' : '') +
                     '</div></div>';
@@ -2055,6 +2315,85 @@
                 }
             }
 
+            function buildPeriodsHistoryHtml(meta, terenId) {
+                const periods = ensureDisplayPeriods(meta);
+                const activePeriod = getActivePeriod(meta);
+                if (!periods.length || (!periods.some(periodHasData) && !(meta.przypisany_typ && meta.przypisany_id))) {
+                    return '<p class="cycle-empty">Brak historii opracowań</p>';
+                }
+                let globalVisit = 0;
+                return '<div class="cycle-history">' + periods.map((period, pi) => {
+                    const isActive = period === activePeriod;
+                    let html = '<div class="cycle-block' + (isActive ? ' active' : '') + '" data-period="' + pi + '">';
+                    html += '<div class="period-przydzial-block"><strong>Przydział:</strong> ' +
+                        escapeHtml(periodAssigneeLabel(period)) + '</div>';
+                    const visits = period.visits?.length ? period.visits : [emptyVisit()];
+                    visits.forEach((visit, vi) => {
+                        globalVisit++;
+                        const isActiveVisit = isActive && vi === visits.length - 1;
+                        html += '<div class="cycle-block' + (isActiveVisit ? ' active' : '') + '" style="margin-top:8px" data-period="' + pi + '" data-visit="' + vi + '">';
+                        html += '<div class="cycle-block-title">Opracowanie ' + globalVisit + (isActiveVisit ? ' (bieżące)' : '') + '</div>';
+                        html += '<div class="cycle-field"><label>Opracowanie ' + globalVisit + ' – przydział</label>' +
+                            '<input type="date" class="visit-przydzial" data-teren="' + escapeHtml(terenId) + '" data-period="' + pi + '" data-visit="' + vi + '" value="' + escapeHtml(visit.przydzial || '') + '"></div>';
+                        html += '<div class="cycle-field"><label>Opracowanie ' + globalVisit + ' – opracowanie</label>' +
+                            '<input type="date" class="visit-opracowanie" data-teren="' + escapeHtml(terenId) + '" data-period="' + pi + '" data-visit="' + vi + '" value="' + escapeHtml(visit.opracowanie || '') + '"></div>';
+                        html += '</div>';
+                    });
+                    html += '<div class="cycle-field" style="margin-top:8px"><label>Data zdania ' + (pi + 1) + '</label>' +
+                        '<input type="date" class="period-zdania" data-teren="' + escapeHtml(terenId) + '" data-period="' + pi + '" value="' + escapeHtml(period.data_zdania || '') + '"></div>';
+                    html += '</div>';
+                    return html;
+                }).join('') + '</div>';
+            }
+
+            function wirePeriodFieldEvents(container, terenId) {
+                const meta = getMeta(terenId);
+                const saveVisitField = async (periodIdx, visitIdx, field, value) => {
+                    normalizeMetaPeriods(meta);
+                    while (meta.periods.length <= periodIdx) meta.periods.push(emptyPeriod());
+                    while (meta.periods[periodIdx].visits.length <= visitIdx) {
+                        meta.periods[periodIdx].visits.push(emptyVisit());
+                    }
+                    meta.periods[periodIdx].visits[visitIdx][field] = value || '';
+                    if (field === 'opracowanie' && !value) {
+                        meta.periods[periodIdx].visits[visitIdx].subterenId = null;
+                    }
+                    terenyMeta[terenId] = meta;
+                    await saveTerenyMeta();
+                    openTerenDetail(terenId);
+                };
+                const savePeriodZdania = async (periodIdx, value) => {
+                    normalizeMetaPeriods(meta);
+                    while (meta.periods.length <= periodIdx) meta.periods.push(emptyPeriod());
+                    meta.periods[periodIdx].data_zdania = value || '';
+                    terenyMeta[terenId] = meta;
+                    await saveTerenyMeta();
+                    openTerenDetail(terenId);
+                };
+                container.querySelectorAll('.visit-przydzial').forEach(inp => {
+                    inp.addEventListener('change', () => saveVisitField(
+                        parseInt(inp.dataset.period, 10),
+                        parseInt(inp.dataset.visit, 10),
+                        'przydzial',
+                        inp.value
+                    ));
+                });
+                container.querySelectorAll('.visit-opracowanie').forEach(inp => {
+                    inp.addEventListener('change', () => saveVisitField(
+                        parseInt(inp.dataset.period, 10),
+                        parseInt(inp.dataset.visit, 10),
+                        'opracowanie',
+                        inp.value
+                    ));
+                });
+                container.querySelectorAll('.period-zdania').forEach(inp => {
+                    inp.addEventListener('change', () => savePeriodZdania(
+                        parseInt(inp.dataset.period, 10),
+                        inp.value
+                    ));
+                });
+            }
+
             function openTerenDetail(id) {
                 selectedTerrainId = String(id);
                 const f = database.features.find(t => String(getFeatureId(t)) === String(id));
@@ -2062,48 +2401,62 @@
                 const meta = getMeta(id);
                 document.getElementById('detail-title').textContent = id + '. ' + getFeatureTitle(f);
                 const body = document.getElementById('teren-detail-body');
-                const comps = meta.completions || [];
                 const hasAssignee = !!(meta.przypisany_typ && meta.przypisany_id);
                 const hidden = isTerenHidden(id);
                 const desc = getFeatureDescription(f);
+                const activePeriod = getActivePeriod(meta);
                 body.innerHTML =
                     (hidden ? '<p style="font-size:12px;color:#7f8c8d;margin-bottom:10px;padding:8px 10px;background:#f4f6f7;border-radius:8px">Ten teren jest ukryty na mapie — tylko na tym urządzeniu, bez synchronizacji.</p>' : '') +
                     (desc ? '<p style="margin-bottom:12px;color:#555"><strong>Opis:</strong> ' + escapeHtml(desc) + '</p>' : '') +
-                    '<p><strong>Przypisany:</strong> ' + (assigneeLabel(meta) || '—') + '</p>' +
+                    '<div style="margin-bottom:12px;padding:10px 12px;background:#ebf5fb;border:1px solid #aed6f1;border-radius:8px">' +
+                    '<strong>Aktualny przydział:</strong> ' + (assigneeLabel(meta) || '—') + '</div>' +
                     (hasAssignee ? '<button class="btn-sm btn-secondary" id="detail-unassign" type="button" style="margin-bottom:10px;background:#fdecea;color:#c0392b">✕ Usuń przydział</button>' : '') +
-                    '<label>Data przydziału</label>' +
-                    '<div class="date-row"><input type="date" id="detail-assigned-date" value="' + escapeHtml(meta.data_przydzialu || '') + '"' + (hasAssignee ? '' : ' disabled') + '>' +
-                    '<button class="btn-sm btn-secondary" id="detail-clear-assigned" type="button"' + (hasAssignee ? '' : ' disabled') + '>×</button></div>' +
-                    '<label>Opracowania (bieżący przydział)</label>' +
-                    '<div>' + (comps.length ? comps.map(c => '<span class="chip">' + escapeHtml(c.date) + (c.subterenId ? ' (' + escapeHtml(c.subterenId) + ')' : '') + '</span>').join('') : '<em>Brak</em>') + '</div>' +
-                    '<label>Data opracowania</label>' +
-                    '<div class="date-row"><input type="date" id="detail-complete-date" value="' + todayISO() + '">' +
-                    '<button class="btn-sm btn-secondary" id="detail-clear-complete" type="button">×</button></div>' +
-                    '<div class="teren-actions">' +
+                    (meta.ostatnie_opracowanie ? '<p style="font-size:13px;color:#666;margin-bottom:10px"><strong>Ostatnio zdany:</strong> ' + escapeHtml(meta.ostatnie_opracowanie) + '</p>' : '') +
+                    '<span class="group-section-label">Historia opracowań</span>' +
+                    buildPeriodsHistoryHtml(meta, id) +
+                    '<div class="teren-detail-actions">' +
                     '<button class="btn-sm btn-success" id="detail-assign" type="button">Przypisz</button>' +
-                    '<button class="btn-sm btn-warning" id="detail-complete" type="button">Opracowany</button>' +
-                    '<button class="btn-sm btn-primary" id="detail-zdaj" type="button">ZDANY</button>' +
+                    (hasAssignee ? '<button class="btn-sm btn-warning" id="detail-complete" type="button">Opracowany</button>' : '') +
+                    (hasAssignee ? '<button class="btn-sm btn-rework" id="detail-rework" type="button">Opracowano ponownie</button>' : '') +
+                    (hasAssignee ? '<button class="btn-sm btn-primary" id="detail-zdaj" type="button">Zdaj teren</button>' : '') +
                     (!isSubteren(f) ? '<button class="btn-sm btn-secondary" id="detail-subteren" type="button">+ Subteren</button>' : '') +
                     '<button class="btn-sm btn-secondary" id="detail-edit" type="button">✎ Edytuj</button>' +
                     '<button class="btn-sm btn-secondary" id="detail-toggle-hide" type="button">' + (hidden ? '👁 Pokaż na mapie' : '⊘ Ukryj na mapie') + '</button>' +
                     '<button class="btn-sm btn-secondary" id="detail-delete" type="button" style="background:#fdecea;color:#c0392b">Usuń</button>' +
                     '</div>';
 
+                wirePeriodFieldEvents(body, id);
+
                 document.getElementById('detail-assign').onclick = () => openAssignModal(id);
                 document.getElementById('detail-unassign')?.addEventListener('click', () => openUnassignModal(id));
-                document.getElementById('detail-complete').onclick = async () => {
-                    const d = document.getElementById('detail-complete-date').value;
-                    const res = await postAction('complete', { terenId: id, date: d || todayISO(), subterenId: isSubteren(f) ? id : null });
+                document.getElementById('detail-complete')?.addEventListener('click', async () => {
+                    const res = await postAction('complete', {
+                        terenId: id,
+                        date: todayISO(),
+                        subterenId: isSubteren(f) ? id : null
+                    });
                     if (res) refreshAfterTerenMetaChange(id);
-                };
-                document.getElementById('detail-zdaj').onclick = async () => {
-                    if (!confirm('Oznaczyć teren jako ZDANY? Bieżący przydział zostanie zarchiwizowany.')) return;
-                    const res = await postAction('zdaj', { terenId: id });
+                });
+                document.getElementById('detail-rework')?.addEventListener('click', async () => {
+                    const res = await postAction('rework', { terenId: id });
+                    if (res) refreshAfterTerenMetaChange(id);
+                });
+                document.getElementById('detail-zdaj')?.addEventListener('click', async () => {
+                    normalizeMetaPeriods(meta);
+                    const activeIdx = meta.periods.findIndex(p => !p.data_zdania);
+                    const zdaniaInp = activeIdx >= 0
+                        ? body.querySelector('.period-zdania[data-period="' + activeIdx + '"]')
+                        : null;
+                    const period = activeIdx >= 0 ? meta.periods[activeIdx] : null;
+                    const lastVisit = period?.visits?.length ? period.visits[period.visits.length - 1] : null;
+                    const zdajDate = zdaniaInp?.value || lastVisit?.opracowanie || todayISO();
+                    if (!confirm('Zdać teren? Bieżący przydział zostanie zarchiwizowany.')) return;
+                    const res = await postAction('zdaj', { terenId: id, date: zdajDate });
                     if (!res) return;
                     archiveSubtereny(id);
                     await saveTereny();
                     refreshAfterTerenMetaChange(id);
-                };
+                });
                 document.getElementById('detail-subteren')?.addEventListener('click', () => startSubterenDraw(id));
                 document.getElementById('detail-edit').onclick = () => {
                     if (isSubteren(f)) startSubterenDraw(getParentId(f), id);
@@ -2111,18 +2464,6 @@
                 };
                 document.getElementById('detail-delete').onclick = () => deleteTeren(id);
                 document.getElementById('detail-toggle-hide').onclick = () => toggleTerenHidden(id);
-                document.getElementById('detail-clear-assigned').onclick = async () => {
-                    meta.data_przydzialu = '';
-                    await saveTerenyMeta();
-                    openTerenDetail(id);
-                };
-                document.getElementById('detail-assigned-date').onchange = async e => {
-                    meta.data_przydzialu = e.target.value || '';
-                    await saveTerenyMeta();
-                };
-                document.getElementById('detail-clear-complete').onclick = () => {
-                    document.getElementById('detail-complete-date').value = '';
-                };
 
                 setPanelView('teren-detail');
                 if (layerById[id]) map.fitBounds(layerById[id].getBounds(), { padding: [50, 50] });
@@ -2214,7 +2555,13 @@
                 if (parentMeta.przypisany_typ) {
                     subMeta.przypisany_typ = parentMeta.przypisany_typ;
                     subMeta.przypisany_id = parentMeta.przypisany_id;
-                    subMeta.data_przydzialu = parentMeta.data_przydzialu || todayISO();
+                    const pPrzydzial = activePrzydzialDate(parentMeta) || todayISO();
+                    subMeta.periods = [{
+                        assignee_typ: parentMeta.przypisany_typ,
+                        assignee_id: parentMeta.przypisany_id,
+                        visits: [{ przydzial: pPrzydzial, opracowanie: '', subterenId: null }],
+                        data_zdania: ''
+                    }];
                 }
 
                 sortFeatures();
@@ -2244,10 +2591,14 @@
                     return;
                 }
 
-                const comps = meta.completions || [];
+                const periods = normalizeMetaPeriods(meta).periods;
+                const activePeriod = getActivePeriod(meta);
+                const activeOps = activePeriod
+                    ? activePeriod.visits.filter(v => v.opracowanie).length
+                    : 0;
                 const who = assigneeLabel(meta) || 'przypisaną osobę';
 
-                if (!comps.length) {
+                if (!activeOps) {
                     if (!confirm('Usunąć przydział: ' + who + '?')) return;
                     confirmUnassign(terenId, false);
                     return;
@@ -2256,7 +2607,7 @@
                 unassignTerenId = terenId;
                 document.getElementById('unassign-modal-text').innerHTML =
                     'Usunąć przydział dla: <strong>' + escapeHtml(who) + '</strong>?<br>' +
-                    'Zapisanych opracowań w tym przydziale: ' + comps.length + '.';
+                    'Zapisanych opracowań w tym przydziale: ' + activeOps + '.';
                 document.getElementById('unassign-modal').classList.add('open');
             }
 
@@ -2368,22 +2719,39 @@
                 let terenyHtml = '<p class="group-empty">Brak przypisanych terenów</p>';
                 if (assigned.length) {
                     terenyHtml = '<div class="brat-teren-list">' + assigned.map(m => {
+                        normalizeMetaPeriods(m);
                         const f = database.features.find(t => String(getFeatureId(t)) === String(m.teren_nr));
                         const title = f ? getFeatureTitle(f) : (m.nazwa || '');
-                        const comps = m.completions || [];
+                        const przydzial = activePrzydzialDate(m);
+                        const lastOp = lastOpracowanieVisit(m);
+                        let visitNum = 0;
+                        const periodsHtml = (m.periods || []).filter(periodHasData).map((period, pi) => {
+                            const assignee = periodAssigneeLabel(period);
+                            const visitsHtml = (period.visits || []).filter(visitHasData).map(visit => {
+                                visitNum++;
+                                let line = 'O' + visitNum + ': ' + (visit.przydzial || '—');
+                                if (visit.opracowanie) line += ' → ' + visit.opracowanie;
+                                return '<span class="brat-completion-chip">' + escapeHtml(line) + '</span>';
+                            }).join('');
+                            let block = '<span class="brat-completion-chip" style="background:#fef9e7;border-color:#f4d03f;color:#7d6608">P' + (pi + 1) + ': ' + escapeHtml(assignee) + '</span>';
+                            if (visitsHtml) block += visitsHtml;
+                            if (period.data_zdania) {
+                                block += '<span class="brat-completion-chip">Zdanie: ' + escapeHtml(period.data_zdania) + '</span>';
+                            }
+                            return block;
+                        }).join('');
                         return '<div class="brat-teren-card">' +
                             '<a href="#" class="brat-teren-link" data-teren="' + escapeHtml(m.teren_nr) + '">' +
                             escapeHtml(m.teren_nr) + '. ' + escapeHtml(title) + '</a>' +
-                            '<div class="teren-meta" style="margin-top:6px">Data przydziału: ' + escapeHtml(m.data_przydzialu || '—') + '</div>' +
-                            (m.ostatnie_opracowanie
+                            '<div class="teren-meta" style="margin-top:6px">Aktualny przydział: ' + escapeHtml(assigneeLabel(m) || przydzial || '—') + '</div>' +
+                            (lastOp ? '<div class="teren-meta">Ostatnie oprac.: ' + escapeHtml(lastOp.opracowanie) + '</div>' : '') +
+                            (m.ostatnie_opracowanie && !getActivePeriod(m)
                                 ? '<div class="teren-meta">Ostatnio zdany: ' + escapeHtml(m.ostatnie_opracowanie) + '</div>'
                                 : '') +
-                            '<div class="group-section-label" style="margin-top:8px;margin-bottom:4px">Bieżące opracowania</div>' +
-                            '<div>' + (comps.length
-                                ? comps.map(c => '<span class="brat-completion-chip">' + escapeHtml(c.date) +
-                                    (c.subterenId ? ' (' + escapeHtml(c.subterenId) + ')' : '') + '</span>').join('')
-                                : '<span class="group-empty" style="padding:6px 10px;font-size:12px">Brak</span>') +
-                            '</div></div>';
+                            (periodsHtml
+                                ? '<div class="group-section-label" style="margin-top:8px;margin-bottom:4px">Historia</div><div>' + periodsHtml + '</div>'
+                                : '') +
+                            '</div>';
                     }).join('') + '</div>';
                 }
 
